@@ -6,12 +6,13 @@ using System.IO;
 using System.Linq;
 using GoogleTestAdapter.Common;
 using GoogleTestAdapter.DiaResolver;
+using GoogleTestAdapter.Helpers;
 using GoogleTestAdapter.Model;
 
 namespace GoogleTestAdapter.TestCases
 {
 
-    internal class TestCaseResolver
+    public class TestCaseResolver
     {
         // see GTA_Traits.h
         private const string TraitAppendix = "_GTA_TRAIT";
@@ -19,24 +20,24 @@ namespace GoogleTestAdapter.TestCases
         private readonly IDiaResolverFactory _diaResolverFactory;
         private readonly ILogger _logger;
 
-        internal TestCaseResolver(IDiaResolverFactory diaResolverFactory, ILogger logger)
+        public TestCaseResolver(IDiaResolverFactory diaResolverFactory, ILogger logger)
         {
             _diaResolverFactory = diaResolverFactory;
             _logger = logger;
         }
 
-        internal Dictionary<string, TestCaseLocation> ResolveAllTestCases(string executable, HashSet<string> testMethodSignatures, string symbolFilterString, string pathExtension, IEnumerable<string> additionalPdbs)
+        public IDictionary<string, TestCaseLocation> ResolveAllTestCases(string executable, HashSet<string> testMethodSignatures, string symbolFilterString, string pathExtension, IEnumerable<string> additionalPdbs)
         {
             var testCaseLocationsFound = FindTestCaseLocationsInBinary(executable, testMethodSignatures, symbolFilterString, pathExtension);
             if (testCaseLocationsFound.Count == 0)
             {
-                ResolveTestCasesFromAdditionalPdbs(testCaseLocationsFound, executable, additionalPdbs, testMethodSignatures, symbolFilterString);
-                ResolveTestCasesFromImports(testCaseLocationsFound, executable, pathExtension, testMethodSignatures, symbolFilterString);
+                testCaseLocationsFound.AddRange(ResolveTestCasesFromAdditionalPdbs(executable, additionalPdbs, testMethodSignatures, symbolFilterString));
+                testCaseLocationsFound.AddRange(ResolveTestCasesFromImports(executable, pathExtension, testMethodSignatures, symbolFilterString));
             }
             return testCaseLocationsFound;
         }
 
-        private Dictionary<string, TestCaseLocation> FindTestCaseLocationsInBinary(
+        private IDictionary<string, TestCaseLocation> FindTestCaseLocationsInBinary(
             string binary, HashSet<string> testMethodSignatures, string symbolFilterString, string pathExtension)
         {
             string pdb = PdbLocator.FindPdbFile(binary, pathExtension, _logger);
@@ -49,26 +50,50 @@ namespace GoogleTestAdapter.TestCases
             return FindTestCaseLocations(binary, pdb, testMethodSignatures, symbolFilterString);
         }
 
-        private void ResolveTestCasesFromAdditionalPdbs(Dictionary<string, TestCaseLocation> testCaseLocationsFound, string executable,
+        private IDictionary<string, TestCaseLocation> ResolveTestCasesFromAdditionalPdbs(string executable,
             IEnumerable<string> additionalPdbs, HashSet<string> testMethodSignatures, string symbolFilterString)
         {
-            foreach (string pdb in additionalPdbs)
+            var testCaseLocationsFound = new Dictionary<string, TestCaseLocation>();
+            foreach (string pattern in additionalPdbs)
             {
-                if (!File.Exists(pdb))
+                bool anyPdbFileFound = false;
+                var filesConsidered = new List<FileSystemInfo>();
+                foreach (var pdbCandidate in Utils.GetMatchingFiles(pattern, _logger))
                 {
-                    _logger.LogWarning($"Configured additional PDB file '{pdb}' does not exist");
-                    continue;
+                    if (pdbCandidate.Attributes.HasFlag(FileAttributes.Directory))
+                    {
+                        continue;
+                    }
+
+                    filesConsidered.Add(pdbCandidate);
+                    var testCaseLocations = FindTestCaseLocations(executable, pdbCandidate.FullName, testMethodSignatures, symbolFilterString);
+                    if (testCaseLocations.Any())
+                    {
+                        anyPdbFileFound = true;
+                    }
+                    testCaseLocationsFound.AddRange(testCaseLocations);
                 }
-                foreach (var keyValuePair in FindTestCaseLocations(executable, pdb, testMethodSignatures, symbolFilterString))
+                if (!anyPdbFileFound)
                 {
-                    testCaseLocationsFound.Add(keyValuePair.Key, keyValuePair.Value);
+                    string message = $"No test case locations found for additional PDB pattern {pattern}. ";
+                    if (filesConsidered.Any())
+                    {
+                        message += $"Files considered: {string.Join(", ", filesConsidered.Select(fsi => fsi.FullName))}";
+                    }
+                    else
+                    {
+                        message += "No files matched the pattern.";
+                    }
+                    _logger.DebugWarning(message);
                 }
             }
+            return testCaseLocationsFound;
         }
 
-        private void ResolveTestCasesFromImports(Dictionary<string, TestCaseLocation> testCaseLocationsFound, string executable, string pathExtension,
+        private IDictionary<string, TestCaseLocation> ResolveTestCasesFromImports(string executable, string pathExtension,
             HashSet<string> testMethodSignatures, string symbolFilterString)
         {
+            var testCaseLocationsFound = new Dictionary<string, TestCaseLocation>();
             List<string> imports = PeParser.ParseImports(executable, _logger);
 
             string moduleDirectory = Path.GetDirectoryName(executable);
@@ -86,6 +111,7 @@ namespace GoogleTestAdapter.TestCases
                     }
                 }
             }
+            return testCaseLocationsFound;
         }
 
         private Dictionary<string, TestCaseLocation> FindTestCaseLocations(string binary, string pdb, HashSet<string> testMethodSignatures,

@@ -199,7 +199,7 @@ namespace GoogleTestAdapter.TestCases
             return true;
         }
 
-        private Dictionary<string, TestCaseLocation> GetTestCaseLocations(IList<TestCaseDescriptor> testCaseDescriptors, string pathExtension, IEnumerable<string> additionalPdbs)
+        private IDictionary<string, TestCaseLocation> GetTestCaseLocations(IList<TestCaseDescriptor> testCaseDescriptors, string pathExtension, IEnumerable<string> additionalPdbs)
         {
             var testMethodSignatures = new HashSet<string>();
             foreach (var descriptor in testCaseDescriptors)
@@ -223,7 +223,7 @@ namespace GoogleTestAdapter.TestCases
             return testCase;
         }
 
-        private TestCase CreateTestCase(TestCaseDescriptor descriptor, Dictionary<string, TestCaseLocation> testCaseLocations)
+        private TestCase CreateTestCase(TestCaseDescriptor descriptor, IDictionary<string, TestCaseLocation> testCaseLocations)
         {
             var signature = _signatureCreator.GetTestMethodSignatures(descriptor)
                 .Select(StripTestSymbolNamespace)

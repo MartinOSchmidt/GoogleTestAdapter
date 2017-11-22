@@ -5,12 +5,13 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using GoogleTestAdapter.Common;
 using GoogleTestAdapter.DiaResolver;
+using GoogleTestAdapter.Helpers;
 using GoogleTestAdapter.Model;
 
 namespace GoogleTestAdapter.TestCases
 {
 
-    internal class NewTestCaseResolver
+    public class NewTestCaseResolver
     {
         // see GTA_Traits.h
         private const string TraitSeparator = "__GTA__";
@@ -27,7 +28,7 @@ namespace GoogleTestAdapter.TestCases
 
         private bool _loadedSymbolsFromImports;
 
-        internal NewTestCaseResolver(string executable, string pathExtension, IEnumerable<string> additionalPdbs, IDiaResolverFactory diaResolverFactory, bool parseSymbolInformation, ILogger logger)
+        public NewTestCaseResolver(string executable, string pathExtension, IEnumerable<string> additionalPdbs, IDiaResolverFactory diaResolverFactory, bool parseSymbolInformation, ILogger logger)
         {
             _executable = executable;
             _pathExtension = pathExtension;
@@ -41,7 +42,7 @@ namespace GoogleTestAdapter.TestCases
                 _loadedSymbolsFromImports = true;
         }
 
-        internal TestCaseLocation FindTestCaseLocation(List<string> testMethodSignatures)
+        public TestCaseLocation FindTestCaseLocation(List<string> testMethodSignatures)
         {
             TestCaseLocation result = DoFindTestCaseLocation(testMethodSignatures);
             if (result == null && !_loadedSymbolsFromImports)
@@ -56,15 +57,12 @@ namespace GoogleTestAdapter.TestCases
 
         private void LoadSymbolsFromAdditionalPdbs()
         {
-            foreach (var pdb in _additionalPdbs)
+            foreach (var pdbPattern in _additionalPdbs)
             {
-                if (!File.Exists(pdb))
+                foreach (FileSystemInfo pdbCandidate in Utils.GetMatchingFiles(pdbPattern, _logger))
                 {
-                    _logger.LogWarning($"Configured .pdb file '{pdb}' does not exist");
-                    continue;
+                    AddSymbolsFromBinary(_executable, pdbCandidate.FullName);
                 }
-                
-                AddSymbolsFromBinary(_executable, pdb);
             }
         }
 
@@ -133,6 +131,7 @@ namespace GoogleTestAdapter.TestCases
             // ReSharper disable once LoopCanBeConvertedToQuery
             foreach (SourceFileLocation nativeTraitSymbol in allTraitSymbols)
             {
+                // TODO bring down to logarithmic complexity (binary search for finding a symbol, collect all matching symbols after and before)
                 if (nativeSymbol.Symbol.StartsWith(nativeTraitSymbol.TestClassSignature))
                 {
                     int lengthOfSerializedTrait = nativeTraitSymbol.Symbol.Length - nativeTraitSymbol.IndexOfSerializedTrait - TraitAppendix.Length;

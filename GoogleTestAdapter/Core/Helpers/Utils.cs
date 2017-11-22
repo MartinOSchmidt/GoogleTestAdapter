@@ -9,6 +9,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using GoogleTestAdapter.Common;
 
 namespace GoogleTestAdapter.Helpers
 {
@@ -91,6 +92,18 @@ namespace GoogleTestAdapter.Helpers
         {
             byte[] file = File.ReadAllBytes(executable);
             return strings.All(s => file.IndexOf(encoding.GetBytes(s)) >= 0);
+        }
+
+        public static IEnumerable<FileSystemInfo> GetMatchingFiles(string glob, ILogger logger)
+        {
+            var globEvaluator = new Glob.Glob(glob)
+            {
+                ThrowOnError = false,
+                DirectoriesOnly = false,
+                IgnoreCase = true,
+                ErrorLog = msg => logger.DebugWarning($"Error while parsing additional PDB pattern: {msg}")
+            };
+            return globEvaluator.Expand();
         }
     }
 
